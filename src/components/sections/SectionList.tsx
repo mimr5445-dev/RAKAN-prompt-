@@ -105,14 +105,6 @@ export const SectionList: React.FC = () => {
             </p>
           </div>
         </div>
-
-        <button
-          onClick={handleOpenCreateSection}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-bold rounded-xl transition-all active:scale-95 shrink-0"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>إضافة قسم</span>
-        </button>
       </div>
 
       {/* Grid of Section Vaults */}

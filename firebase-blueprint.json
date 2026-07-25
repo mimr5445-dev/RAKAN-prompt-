@@ -1,0 +1,98 @@
+{
+  "entities": [
+    {
+      "name": "users",
+      "path": "users/{userId}",
+      "description": "User profile and metadata",
+      "properties": {
+        "email": "string",
+        "displayName": "string",
+        "photoURL": "string",
+        "lastSyncedAt": "string"
+      },
+      "rules": {
+        "read": "request.auth != null && request.auth.uid == userId",
+        "write": "request.auth != null && request.auth.uid == userId"
+      },
+      "subcollections": [
+        {
+          "name": "sections",
+          "path": "users/{userId}/sections/{sectionId}",
+          "description": "User sections",
+          "properties": {
+            "id": "string",
+            "name": "string",
+            "order": "number",
+            "isPinned": "boolean",
+            "isFavorite": "boolean"
+          },
+          "rules": {
+            "read": "request.auth != null && request.auth.uid == userId",
+            "write": "request.auth != null && request.auth.uid == userId"
+          }
+        },
+        {
+          "name": "categories",
+          "path": "users/{userId}/categories/{categoryId}",
+          "description": "User categories",
+          "properties": {
+            "id": "string",
+            "sectionId": "string",
+            "name": "string",
+            "order": "number"
+          },
+          "rules": {
+            "read": "request.auth != null && request.auth.uid == userId",
+            "write": "request.auth != null && request.auth.uid == userId"
+          }
+        },
+        {
+          "name": "prompts",
+          "path": "users/{userId}/prompts/{promptId}",
+          "description": "User prompt items",
+          "properties": {
+            "id": "string",
+            "title": "string",
+            "content": "string",
+            "categoryId": "string",
+            "sectionId": "string",
+            "isFavorite": "boolean",
+            "isPinned": "boolean",
+            "isDeleted": "boolean",
+            "updatedAt": "string"
+          },
+          "rules": {
+            "read": "request.auth != null && request.auth.uid == userId",
+            "write": "request.auth != null && request.auth.uid == userId"
+          }
+        },
+        {
+          "name": "tags",
+          "path": "users/{userId}/tags/{tagId}",
+          "description": "User tags",
+          "properties": {
+            "id": "string",
+            "name": "string"
+          },
+          "rules": {
+            "read": "request.auth != null && request.auth.uid == userId",
+            "write": "request.auth != null && request.auth.uid == userId"
+          }
+        },
+        {
+          "name": "settings",
+          "path": "users/{userId}/settings/{settingId}",
+          "description": "User settings",
+          "properties": {
+            "language": "string",
+            "themeMode": "string"
+          },
+          "rules": {
+            "read": "request.auth != null && request.auth.uid == userId",
+            "write": "request.auth != null && request.auth.uid == userId"
+          }
+        }
+      ]
+    }
+  ]
+}

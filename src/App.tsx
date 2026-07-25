@@ -93,17 +93,6 @@ const MainAppContent: React.FC = () => {
                         </h2>
                       </div>
                     </div>
-
-                    <button
-                      onClick={() => {
-                        setEditingPrompt(null);
-                        setActiveModal('create_prompt');
-                      }}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-bold rounded-xl transition-all active:scale-95 shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>أمر جديد</span>
-                    </button>
                   </div>
 
                   {/* Filter, Sort & View Mode Toolbar */}
@@ -120,7 +109,7 @@ const MainAppContent: React.FC = () => {
                           لا توجد أوراق أو أوامر في هذا المجلد بعد
                         </h4>
                         <p className="text-[11px] text-stone-500 dark:text-stone-400 max-w-xs mx-auto leading-relaxed">
-                          انقر على زر الإضافة (+) أدناه لإنشاء وتوثيق أول أمر ذكاء اصطناعي في هذا المجلد.
+                          انقر على زر الإضافة (+) لإنشاء وتوثيق أول أمر ذكاء اصطناعي في هذا المجلد.
                         </p>
                         <button
                           onClick={() => {

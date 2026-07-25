@@ -2,7 +2,7 @@
  * RAKAN Prompt - Central Application Context & State Manager
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Section,
   Category,
@@ -18,9 +18,19 @@ import {
 } from '../types';
 import { dbEngine } from '../db/indexedDB';
 import { getTranslation, TranslationKey } from '../locales';
+import { PRESET_PALETTES } from '../theme/colors';
 import confetti from 'canvas-confetti';
+import { User } from 'firebase/auth';
+import { firebaseService, SyncStatus } from '../services/firebaseService';
 
 interface AppContextType {
+  // Cloud Sync & Auth
+  currentUser: User | null;
+  syncStatus: SyncStatus;
+  signInWithGoogle: () => Promise<void>;
+  switchAccount: () => Promise<void>;
+  signOutGoogle: () => Promise<void>;
+
   // State
   sections: Section[];
   categories: Category[];
@@ -179,6 +189,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const [currentUser, setCurrentUser] = useState<User | null>(() => firebaseService.getCurrentUser());
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => firebaseService.getSyncStatus());
+  const currentUserRef = useRef<User | null>(currentUser);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  const triggerFullSync = useCallback(async (uid: string) => {
+    try {
+      const [dbSections, dbCategories, dbPrompts, dbTags, dbSettings] = await Promise.all([
+        dbEngine.getAllSections(),
+        dbEngine.getAllCategories(),
+        dbEngine.getAllPrompts(),
+        dbEngine.getAllTags(),
+        dbEngine.getSettings(),
+      ]);
+      const currentSettings = { ...DEFAULT_SETTINGS, ...dbSettings };
+
+      await firebaseService.performFullSync(
+        uid,
+        dbSections,
+        dbCategories,
+        dbPrompts,
+        dbTags,
+        currentSettings,
+        async (newSections, newCategories, newPrompts, newTags, newSettings) => {
+          for (const sec of newSections) await dbEngine.saveSection(sec);
+          for (const cat of newCategories) await dbEngine.saveCategory(cat);
+          await dbEngine.bulkSavePrompts(newPrompts);
+          for (const tag of newTags) await dbEngine.saveTag(tag);
+          await dbEngine.saveSettings(newSettings);
+
+          setSections([...newSections].sort((a, b) => a.order - b.order));
+          setCategories([...newCategories].sort((a, b) => a.order - b.order));
+          setPrompts([...newPrompts]);
+          setTags([...newTags]);
+          setSettings(newSettings);
+          setViewMode(newSettings.viewMode);
+        }
+      );
+    } catch (err) {
+      console.error('Full sync error:', err);
+    }
+  }, []);
+
+  const syncToCloud = useCallback((itemType: 'section' | 'category' | 'prompt' | 'tag' | 'settings', action: 'save' | 'delete', itemOrId: any) => {
+    const uid = currentUserRef.current?.uid;
+    if (!uid) return;
+    if (itemType === 'section') {
+      if (action === 'save') firebaseService.saveSectionToCloud(uid, itemOrId);
+      else firebaseService.deleteSectionFromCloud(uid, itemOrId);
+    } else if (itemType === 'category') {
+      if (action === 'save') firebaseService.saveCategoryToCloud(uid, itemOrId);
+      else firebaseService.deleteCategoryFromCloud(uid, itemOrId);
+    } else if (itemType === 'prompt') {
+      if (action === 'save') firebaseService.savePromptToCloud(uid, itemOrId);
+      else firebaseService.deletePromptFromCloud(uid, itemOrId);
+    } else if (itemType === 'tag') {
+      if (action === 'save') firebaseService.saveTagToCloud(uid, itemOrId);
+      else firebaseService.deleteTagFromCloud(uid, itemOrId);
+    } else if (itemType === 'settings') {
+      if (action === 'save') firebaseService.saveSettingsToCloud(uid, itemOrId);
+    }
+  }, []);
+
   // Translation function shorthand
   const t = useCallback((key: TranslationKey) => getTranslation(settings.language, key), [settings.language]);
 
@@ -188,6 +264,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setToastMessage(null);
     }, 2800);
   }, []);
+
+  useEffect(() => {
+    const unsubscribeAuth = firebaseService.onAuthChange((user) => {
+      setCurrentUser(user);
+      if (user && navigator.onLine) {
+        triggerFullSync(user.uid);
+      }
+    });
+
+    const unsubscribeStatus = firebaseService.subscribeSyncStatus((status) => {
+      setSyncStatus(status);
+    });
+
+    firebaseService.setOnlineReturnHandler(() => {
+      const u = firebaseService.getCurrentUser();
+      if (u) triggerFullSync(u.uid);
+    });
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeStatus();
+    };
+  }, [triggerFullSync]);
+
+  const signInWithGoogle = useCallback(async () => {
+    try {
+      const user = await firebaseService.signInWithGoogle();
+      if (user) {
+        showToast(t('signedInSuccess') || 'تم تسجيل الدخول بنجاح');
+        await triggerFullSync(user.uid);
+      }
+    } catch (err: any) {
+      if (err.code !== 'auth/popup-closed-by-user') {
+        showToast('خطأ في تسجيل الدخول');
+      }
+    }
+  }, [showToast, triggerFullSync, t]);
+
+  const switchAccount = useCallback(async () => {
+    try {
+      const user = await firebaseService.switchAccount();
+      if (user) {
+        showToast(t('accountSwitched') || 'تم تبديل الحساب');
+        await triggerFullSync(user.uid);
+      }
+    } catch (err: any) {
+      if (err.code !== 'auth/popup-closed-by-user') {
+        showToast('خطأ في تبديل الحساب');
+      }
+    }
+  }, [showToast, triggerFullSync, t]);
+
+  const signOutGoogle = useCallback(async () => {
+    try {
+      await firebaseService.logout();
+      showToast(t('signedOutSuccess') || 'تم تسجيل الخروج');
+    } catch (err) {
+      showToast('خطأ في تسجيل الخروج');
+    }
+  }, [showToast, t]);
 
   // Initialize DB and load initial state
   useEffect(() => {
@@ -220,19 +356,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Start at root level (Sections overview) by default
         setActiveSectionId(null);
         setActiveCategoryId(null);
+
+        const u = firebaseService.getCurrentUser();
+        if (u && navigator.onLine) {
+          triggerFullSync(u.uid);
+        }
       } catch (err) {
         console.error('Failed to initialize local IndexedDB:', err);
       }
     };
 
     initApp();
-  }, []);
+  }, [triggerFullSync]);
 
   // Update document direction (RTL for Arabic, LTR for English)
   useEffect(() => {
     document.documentElement.dir = settings.language === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = settings.language;
   }, [settings.language]);
+
+  // Apply Theme Mode (Dark/Light), Font Family, and Dynamic Colors
+  useEffect(() => {
+    const updateThemeMode = () => {
+      const isDark =
+        settings.themeMode === 'dark' ||
+        (settings.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+    updateThemeMode();
+
+    let mediaQuery: MediaQueryList | null = null;
+    if (settings.themeMode === 'auto') {
+      mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      mediaQuery.addEventListener('change', updateThemeMode);
+    }
+
+    // Font Family
+    const fontName =
+      settings.fontFamily === 'cairo'
+        ? "'Cairo', sans-serif"
+        : settings.fontFamily === 'tajawal'
+        ? "'Tajawal', sans-serif"
+        : 'system-ui, -apple-system, sans-serif';
+    document.documentElement.style.fontFamily = fontName;
+    document.body.style.fontFamily = fontName;
+
+    // Theme Colors Override
+    const palette = PRESET_PALETTES[settings.primaryColor] || PRESET_PALETTES['#78350F'];
+    let styleEl = document.getElementById('rakan-theme-override');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'rakan-theme-override';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.innerHTML = `
+      :root, .dark, html, body {
+        --color-amber-50: ${palette['50']} !important;
+        --color-amber-100: ${palette['100']} !important;
+        --color-amber-200: ${palette['200']} !important;
+        --color-amber-300: ${palette['300']} !important;
+        --color-amber-400: ${palette['400']} !important;
+        --color-amber-500: ${palette['500']} !important;
+        --color-amber-600: ${palette['600']} !important;
+        --color-amber-700: ${palette['700']} !important;
+        --color-amber-800: ${palette['800']} !important;
+        --color-amber-900: ${palette['900']} !important;
+        --color-amber-950: ${palette['950']} !important;
+      }
+    `;
+
+    return () => {
+      if (mediaQuery) {
+        mediaQuery.removeEventListener('change', updateThemeMode);
+      }
+    };
+  }, [settings.themeMode, settings.fontFamily, settings.primaryColor]);
 
   // Section Operations
   const createSection = async (name: string): Promise<Section> => {
@@ -248,6 +450,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     await dbEngine.saveSection(newSection);
+    syncToCloud('section', 'save', newSection);
     const updated = [...sections, newSection];
     setSections(updated);
     setActiveSectionId(newSection.id);
@@ -259,6 +462,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateSection = async (section: Section): Promise<void> => {
     const updatedSection = { ...section, updatedAt: new Date().toISOString() };
     await dbEngine.saveSection(updatedSection);
+    syncToCloud('section', 'save', updatedSection);
     setSections((prev) => prev.map((s) => (s.id === section.id ? updatedSection : s)));
     showToast(t('toastUpdated'));
   };
@@ -266,15 +470,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteSection = async (id: string): Promise<void> => {
     // Delete section, its categories and prompts
     await dbEngine.deleteSection(id);
+    syncToCloud('section', 'delete', id);
 
     const catsToDelete = categories.filter((c) => c.sectionId === id);
     for (const c of catsToDelete) {
       await dbEngine.deleteCategory(c.id);
+      syncToCloud('category', 'delete', c.id);
     }
 
     const promptsToDelete = prompts.filter((p) => p.sectionId === id);
     for (const p of promptsToDelete) {
       await dbEngine.deletePrompt(p.id);
+      syncToCloud('prompt', 'delete', p.id);
     }
 
     setSections((prev) => prev.filter((s) => s.id !== id));
@@ -294,6 +501,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (sec) {
       const updated = { ...sec, isPinned: !sec.isPinned, updatedAt: new Date().toISOString() };
       await dbEngine.saveSection(updated);
+      syncToCloud('section', 'save', updated);
       setSections((prev) => prev.map((s) => (s.id === id ? updated : s)));
     }
   };
@@ -303,6 +511,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (sec) {
       const updated = { ...sec, isFavorite: !sec.isFavorite, updatedAt: new Date().toISOString() };
       await dbEngine.saveSection(updated);
+      syncToCloud('section', 'save', updated);
       setSections((prev) => prev.map((s) => (s.id === id ? updated : s)));
     }
   };
@@ -312,6 +521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSections(updated);
     for (const s of updated) {
       await dbEngine.saveSection(s);
+      syncToCloud('section', 'save', s);
     }
   };
 
@@ -329,6 +539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     await dbEngine.saveCategory(newCat);
+    syncToCloud('category', 'save', newCat);
     setCategories((prev) => [...prev, newCat]);
     setActiveCategoryId(newCat.id);
     showToast(t('toastCreated'));
@@ -338,15 +549,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateCategory = async (category: Category): Promise<void> => {
     const updated = { ...category, updatedAt: new Date().toISOString() };
     await dbEngine.saveCategory(updated);
+    syncToCloud('category', 'save', updated);
     setCategories((prev) => prev.map((c) => (c.id === category.id ? updated : c)));
     showToast(t('toastUpdated'));
   };
 
   const deleteCategory = async (id: string): Promise<void> => {
     await dbEngine.deleteCategory(id);
+    syncToCloud('category', 'delete', id);
     const promptsToDelete = prompts.filter((p) => p.categoryId === id);
     for (const p of promptsToDelete) {
       await dbEngine.deletePrompt(p.id);
+      syncToCloud('prompt', 'delete', p.id);
     }
 
     setCategories((prev) => prev.filter((c) => c.id !== id));
@@ -373,6 +587,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     await dbEngine.saveCategory(newCat);
+    syncToCloud('category', 'save', newCat);
 
     // Duplicate all prompt items in this category
     const catPrompts = prompts.filter((p) => p.categoryId === id && !p.isDeleted);
@@ -387,6 +602,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedAt: new Date().toISOString(),
       };
       await dbEngine.savePrompt(dupPrompt);
+      syncToCloud('prompt', 'save', dupPrompt);
       duplicatedPrompts.push(dupPrompt);
     }
 
@@ -400,6 +616,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (cat) {
       const updated = { ...cat, isPinned: !cat.isPinned, updatedAt: new Date().toISOString() };
       await dbEngine.saveCategory(updated);
+      syncToCloud('category', 'save', updated);
       setCategories((prev) => prev.map((c) => (c.id === id ? updated : c)));
     }
   };
@@ -409,6 +626,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (cat) {
       const updated = { ...cat, isFavorite: !cat.isFavorite, updatedAt: new Date().toISOString() };
       await dbEngine.saveCategory(updated);
+      syncToCloud('category', 'save', updated);
       setCategories((prev) => prev.map((c) => (c.id === id ? updated : c)));
     }
   };
@@ -421,6 +639,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     for (const c of updated) {
       await dbEngine.saveCategory(c);
+      syncToCloud('category', 'save', c);
     }
   };
 
@@ -461,6 +680,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     await dbEngine.savePrompt(newPrompt);
+    syncToCloud('prompt', 'save', newPrompt);
     setPrompts((prev) => [newPrompt, ...prev]);
 
     // Automatically add unknown tags to Global Tags list
@@ -505,6 +725,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     await dbEngine.savePrompt(updated);
+    syncToCloud('prompt', 'save', updated);
     setPrompts((prev) => prev.map((p) => (p.id === prompt.id ? updated : p)));
     if (selectedPrompt && selectedPrompt.id === prompt.id) {
       setSelectedPrompt(updated);
@@ -523,6 +744,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     await dbEngine.savePrompt(updated);
+    syncToCloud('prompt', 'save', updated);
     setPrompts((prev) => prev.map((p) => (p.id === id ? updated : p)));
     if (selectedPrompt && selectedPrompt.id === id) {
       setSelectedPrompt(null);
@@ -541,12 +763,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     await dbEngine.savePrompt(updated);
+    syncToCloud('prompt', 'save', updated);
     setPrompts((prev) => prev.map((p) => (p.id === id ? updated : p)));
     showToast(t('toastRestored'));
   };
 
   const deletePromptPermanently = async (id: string): Promise<void> => {
     await dbEngine.deletePrompt(id);
+    syncToCloud('prompt', 'delete', id);
     setPrompts((prev) => prev.filter((p) => p.id !== id));
     showToast(t('toastDeleted'));
   };
@@ -556,6 +780,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (p) {
       const updated = { ...p, isFavorite: !p.isFavorite, updatedAt: new Date().toISOString() };
       await dbEngine.savePrompt(updated);
+      syncToCloud('prompt', 'save', updated);
       setPrompts((prev) => prev.map((item) => (item.id === id ? updated : item)));
       if (selectedPrompt && selectedPrompt.id === id) setSelectedPrompt(updated);
     }
@@ -566,6 +791,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (p) {
       const updated = { ...p, isPinned: !p.isPinned, updatedAt: new Date().toISOString() };
       await dbEngine.savePrompt(updated);
+      syncToCloud('prompt', 'save', updated);
       setPrompts((prev) => prev.map((item) => (item.id === id ? updated : item)));
       if (selectedPrompt && selectedPrompt.id === id) setSelectedPrompt(updated);
     }
@@ -584,6 +810,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lastUsedAt: new Date().toISOString(),
       };
       dbEngine.savePrompt(updated);
+      syncToCloud('prompt', 'save', updated);
       setPrompts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     }
 
@@ -630,6 +857,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     await dbEngine.saveTag(newTag);
+    syncToCloud('tag', 'save', newTag);
     setTags((prev) => [...prev, newTag]);
     return newTag;
   };
@@ -649,6 +877,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         newTagsSet.add(targetTag.name);
         const updatedPrompt = { ...p, tags: Array.from(newTagsSet) };
         await dbEngine.savePrompt(updatedPrompt);
+        syncToCloud('prompt', 'save', updatedPrompt);
         updatedPrompts.push(updatedPrompt);
       }
     }
@@ -656,6 +885,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Delete merged tags
     for (const tagId of tagIdsToMerge) {
       await dbEngine.deleteTag(tagId);
+      syncToCloud('tag', 'delete', tagId);
     }
 
     setTags((prev) => prev.filter((t) => !tagIdsToMerge.includes(t.id)));
@@ -672,6 +902,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedTag = { ...tag, name: cleanNewName };
 
     await dbEngine.saveTag(updatedTag);
+    syncToCloud('tag', 'save', updatedTag);
 
     // Update prompts
     const updatedPrompts: PromptItem[] = [];
@@ -682,6 +913,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           tags: p.tags.map((tName) => (tName === oldName ? cleanNewName : tName)),
         };
         await dbEngine.savePrompt(updatedPrompt);
+        syncToCloud('prompt', 'save', updatedPrompt);
         updatedPrompts.push(updatedPrompt);
       }
     }
@@ -696,6 +928,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!tag) return;
 
     await dbEngine.deleteTag(tagId);
+    syncToCloud('tag', 'delete', tagId);
 
     // Remove tag from prompts
     const updatedPrompts: PromptItem[] = [];
@@ -706,6 +939,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           tags: p.tags.filter((tName) => tName !== tag.name),
         };
         await dbEngine.savePrompt(updatedPrompt);
+        syncToCloud('prompt', 'save', updatedPrompt);
         updatedPrompts.push(updatedPrompt);
       }
     }
@@ -720,11 +954,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const merged = { ...settings, ...newSettings };
     setSettings(merged);
     await dbEngine.saveSettings(merged);
+    syncToCloud('settings', 'save', merged);
     showToast(t('toastUpdated'));
   };
 
   const resetApplication = async (): Promise<void> => {
     await dbEngine.clearAllData();
+    const uid = currentUserRef.current?.uid;
+    if (uid) {
+      for (const s of sections) syncToCloud('section', 'delete', s.id);
+      for (const c of categories) syncToCloud('category', 'delete', c.id);
+      for (const p of prompts) syncToCloud('prompt', 'delete', p.id);
+      for (const t of tags) syncToCloud('tag', 'delete', t.id);
+      syncToCloud('settings', 'save', DEFAULT_SETTINGS);
+    }
     setSections([]);
     setCategories([]);
     setPrompts([]);
@@ -740,6 +983,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const deletedPrompts = prompts.filter((p) => p.isDeleted);
     for (const p of deletedPrompts) {
       await dbEngine.deletePrompt(p.id);
+      syncToCloud('prompt', 'delete', p.id);
     }
     setPrompts((prev) => prev.filter((p) => !p.isDeleted));
     showToast(t('toastUpdated'));
@@ -849,6 +1093,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        currentUser,
+        syncStatus,
+        signInWithGoogle,
+        switchAccount,
+        signOutGoogle,
         sections,
         categories,
         prompts,

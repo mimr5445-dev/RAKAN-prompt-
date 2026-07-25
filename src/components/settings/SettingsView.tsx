@@ -18,12 +18,29 @@ import {
   Sun,
   Moon,
   Monitor,
+  User,
+  LogOut,
+  Users,
+  LogIn,
+  Cloud,
+  CheckCircle2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { COLOR_PRESETS } from '../../theme/colors';
 
 export const SettingsView: React.FC = () => {
-  const { settings, updateSettings, setActiveModal, resetApplication, stats, t } = useApp();
+  const {
+    settings,
+    updateSettings,
+    setActiveModal,
+    resetApplication,
+    stats,
+    t,
+    currentUser,
+    signInWithGoogle,
+    switchAccount,
+    signOutGoogle,
+  } = useApp();
   const isRTL = settings.language === 'ar';
   const ArrowIcon = isRTL ? ChevronLeft : ChevronRight;
 
@@ -43,6 +60,82 @@ export const SettingsView: React.FC = () => {
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto space-y-4 text-xs">
+        {/* Google Authentication & Cloud Storage Card */}
+        <div className="p-4 rounded-2xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 space-y-3 shadow-sm">
+          <div className="flex items-center justify-between font-bold text-stone-800 dark:text-stone-200">
+            <div className="flex items-center gap-2">
+              <Cloud className="w-4 h-4 text-amber-500" />
+              <span>المزامنة السحابية والحساب</span>
+            </div>
+            {currentUser && (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-extrabold bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                <CheckCircle2 className="w-3 h-3" />
+                متصل
+              </span>
+            )}
+          </div>
+
+          {currentUser ? (
+            <div className="space-y-3 pt-1">
+              {/* Profile Details */}
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-stone-100 dark:bg-stone-900/80 border border-stone-200 dark:border-stone-700/60">
+                {currentUser.photoURL ? (
+                  <img
+                    src={currentUser.photoURL}
+                    alt={currentUser.displayName || 'User'}
+                    className="w-10 h-10 rounded-full object-cover border border-amber-500/30 shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
+                    <User className="w-5 h-5" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-bold text-stone-900 dark:text-stone-100 truncate text-xs">
+                    {currentUser.displayName || 'مستخدم RAKAN'}
+                  </h4>
+                  <p className="text-[11px] text-stone-500 dark:text-stone-400 truncate dir-ltr">
+                    {currentUser.email}
+                  </p>
+                </div>
+              </div>
+
+              {/* Account Actions */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  onClick={switchAccount}
+                  className="py-2.5 px-3 rounded-xl bg-stone-200/80 dark:bg-stone-700/80 hover:bg-stone-300 dark:hover:bg-stone-600 text-stone-800 dark:text-stone-200 font-bold transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Users className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>تبديل الحساب</span>
+                </button>
+
+                <button
+                  onClick={signOutGoogle}
+                  className="py-2.5 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 font-bold transition-all flex items-center justify-center gap-1.5"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>تسجيل الخروج</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-1 text-center">
+              <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
+                سجل دخولك بحساب Google لإنشاء مساحتك التخزينية السحابية الخاصة، ومزامنة الأقسام والمجلدات والأوامر تلقائياً عبر جميع أجهزتك بأمان.
+              </p>
+              <button
+                onClick={signInWithGoogle}
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-white font-extrabold rounded-xl shadow-md shadow-amber-900/20 transition-all flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>تسجيل الدخول مع Google</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Language Selection Card */}
         <div className="p-4 rounded-2xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 space-y-2">
           <div className="flex items-center justify-between font-bold text-stone-800 dark:text-stone-200">

@@ -95,14 +95,6 @@ export const CategoryGrid: React.FC = () => {
             </h2>
           </div>
         </div>
-
-        <button
-          onClick={handleOpenCreateCategory}
-          className="flex items-center gap-1 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-bold rounded-xl transition-all active:scale-95 shrink-0"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>مجلد جديد</span>
-        </button>
       </div>
 
       {/* Categories Content Area */}
