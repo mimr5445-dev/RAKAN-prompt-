@@ -1,0 +1,6 @@
+{
+  "name": "RAKAN Prompt",
+  "description": "Professional Prompt Library Manager with Arabic RTL localization, section & category organization, rich prompt editing, local storage, backup/export, image management, and native mobile iOS experience.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
