@@ -39,7 +39,7 @@ export const MobileShell: React.FC<MobileShellProps> = ({ children }) => {
     (settings.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   return (
-    <div className={`min-h-[100dvh] w-full flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 md:p-6 transition-colors duration-300 ${
+    <div className={`flex-1 w-full min-h-[100dvh] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 md:p-6 transition-colors duration-300 ${
       isDarkMode ? 'bg-stone-950 text-stone-100' : 'bg-stone-50 dark:bg-stone-900 text-stone-900 sm:bg-amber-950/20'
     }`}>
       {/* Frame Toggle Controls for Desktop Preview */}
@@ -55,7 +55,7 @@ export const MobileShell: React.FC<MobileShellProps> = ({ children }) => {
 
       {/* iPhone 11 Pro Max Outer Container (Full Edge-to-Edge on Mobile, iPhone Frame on Desktop sm+) */}
       <div
-        className={`relative w-full min-h-[100dvh] flex-1 sm:flex-initial sm:h-[880px] sm:max-w-[420px] transition-all duration-300 flex flex-col overflow-x-hidden sm:overflow-hidden bg-stone-50 dark:bg-stone-900 select-none ${
+        className={`relative w-full h-[100dvh] min-h-[100dvh] flex-1 sm:flex-initial sm:h-[880px] sm:min-h-[880px] sm:max-w-[420px] transition-all duration-300 flex flex-col overflow-hidden bg-stone-50 dark:bg-stone-900 select-none ${
           isPhoneFrame
             ? 'sm:rounded-[48px] sm:border-[10px] sm:border-stone-800 dark:sm:border-stone-950 sm:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.6)] sm:ring-1 sm:ring-white/10'
             : 'sm:rounded-2xl sm:shadow-2xl'

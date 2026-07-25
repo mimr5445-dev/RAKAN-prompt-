@@ -55,7 +55,7 @@ const MainAppContent: React.FC = () => {
 
   return (
     <MobileShell>
-      <div className="w-full h-full flex flex-col overflow-hidden bg-stone-50 dark:bg-stone-900 text-stone-900 dark:text-stone-100 select-none">
+      <div className="w-full h-full flex-1 flex flex-col overflow-hidden bg-stone-50 dark:bg-stone-900 text-stone-900 dark:text-stone-100 select-none">
         {/* Sticky Mobile Header */}
         <Header />
 
